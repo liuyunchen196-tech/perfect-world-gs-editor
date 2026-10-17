@@ -19,13 +19,36 @@ State*::Calculate/State*::GetTime...）。本工具反汇编每个方法，抽�
   python gs_tool.py export-db [--out 目录]                  # 导出全技能数据库(SQLite/JSON/CSV)
 
 默认 gs = 运行目录下 ./gs 或 D:/完美单机/修改gs工具/gs；默认 skillstr = 本脚本同级 assets/skillstr.txt。
+
+批量按比例修改：
+  python gs_tool.py batch-modify --gs <路径> --scope damage|cooldown|cast|release \
+      --ratio 1.5 --skills 1728,1729  | --zhen | --kuang | --all [--dry-run]
+  # 写前自动备份 gs 到 data/backup/gs.<说明>.<时间>.bak，打补丁后回读校验。
 """
 import os, sys, struct, shutil, time, re, json, sqlite3, argparse, csv
 from capstone import Cs, CS_ARCH_X86, CS_MODE_32
 
-SKILLSTR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'skillstr.txt')
+_HERE_TOOL = os.path.dirname(os.path.abspath(__file__))
+# 可移植定位 skillstr：本目录有 data+assets 就用本目录（项目根），否则回退上级（skill/scripts -> skill根）
+if os.path.isdir(os.path.join(_HERE_TOOL, 'data')) and os.path.exists(os.path.join(_HERE_TOOL, 'assets', 'skillstr.txt')):
+    SKILLSTR = os.path.join(_HERE_TOOL, 'assets', 'skillstr.txt')
+else:
+    SKILLSTR = os.path.join(_HERE_TOOL, '..', 'assets', 'skillstr.txt')
 GS_DEFAULT = r'D:\完美单机\修改gs工具\gs'
 OUT_DEFAULT = r'D:\完美单机\技能数据库查看器'
+
+# 批量引擎（与 server.py 共用）。可移植：优先脚本同目录 import
+# （项目根与 skill/scripts 两处都已放置 batch_engine.py），再回退已知项目根。
+_HERE_TOOL = os.path.dirname(os.path.abspath(__file__))
+if _HERE_TOOL not in sys.path:
+    sys.path.insert(0, _HERE_TOOL)
+_PROJECT_DIR = r'D:\完美单机\技能修改器项目'
+if os.path.isdir(_PROJECT_DIR) and _PROJECT_DIR not in sys.path:
+    sys.path.append(_PROJECT_DIR)
+try:
+    import batch_engine as BE
+except Exception:
+    BE = None
 
 
 # ======================= ELF 解析 =======================
@@ -237,14 +260,16 @@ def parse_skillstr(path):
         if idx % 2 == 0:
             name_map[code] = lines[i][m.end():].strip().rstrip('"')
         else:
-            block = [lines[i]]; j = i + 1
+            # 描述块：奇数 idx 行起，直到下一个 idx 行止（不含）。
+            # ⚠ 不能用"以引号结尾"判断——技能名行本身以"结尾，会吞掉后续名称行（如 1460"狂战士"）。
+            j = i + 1
             while j < len(lines):
-                block.append(lines[j])
-                if lines[j].rstrip().endswith('"'): break
+                if _LINE.match(lines[j]):
+                    break
                 j += 1
-            block[0] = lines[i][m.end():]
+            block = [lines[i][m.end():]] + [lines[k] for k in range(i + 1, j)]
             desc_map[code] = '\n'.join(block).rstrip().rstrip('"')
-            i = j
+            i = j - 1
         i += 1
     return name_map, desc_map
 
@@ -266,6 +291,16 @@ def resolve_sid(key, name_map):
 def view_skill(elf, sid, name_map):
     data = load_skill(elf, sid)
     print(f'技能 {sid}  {name_map.get(sid, "")}  可编辑特性：')
+    # 真/狂伤害标注（来自 manifest）
+    if BE is not None:
+        man = BE.try_load_manifest()
+        if man:
+            sk = next((s for s in man.get('skills', []) if s.get('skill_id') == sid), None)
+            if sk:
+                print(f'\n★ 真/狂伤害标注（manifest：variant={sk.get("variant")} base={sk.get("base_skill_id")} analysis={sk.get("damage_analysis")}）')
+                for dc in sk.get('damage_constants', []):
+                    sh = '  ⚠共享(不可单独改)' if dc.get('shared') else '  ✓自有可改'
+                    print(f'    方法={dc.get("method")} off={dc.get("file_off")} kind={dc.get("kind")} value={dc.get("value")} refs={dc.get("refs")} role={dc.get("role")}{sh}')
     if not data:
         print('  (无 Skill{id}Stub 的可编辑方法，或均为数组/复杂计算)')
         return data
@@ -431,6 +466,78 @@ def export_db(elf, name_map, desc_map, outdir):
     print(f'导出 {len(rows)} 条 -> {outdir}')
 
 
+def run_batch(elf, name_map, args):
+    if BE is None:
+        print('批量引擎 batch_engine 不可用（项目目录 %s 未找到或导入失败）。' % _PROJECT_DIR)
+        sys.exit(1)
+    # 技能范围解析
+    explicit = []
+    if args.skills:
+        explicit = [int(x) for x in re.split(r'[,，\s]+', args.skills.strip()) if x]
+    mode = 'custom'
+    if args.all: mode = 'all'
+    elif args.zhen: mode = 'zhen'
+    elif args.kuang: mode = 'kuang'
+    elif not explicit:
+        print('请用 --skills 1728,1729 或 --zhen/--kuang/--all 指定技能范围。'); sys.exit(1)
+    try:
+        sids = BE.resolve_skill_ids(elf, name_map, mode, explicit)
+    except BE.BatchError as e:
+        print('技能范围解析失败: %s' % e); sys.exit(1)
+    if not sids:
+        print('未选中任何技能。'); sys.exit(1)
+    # manifest（damage 作用域强校验）
+    manifest = None
+    if args.scope == 'damage':
+        try:
+            manifest = BE.load_manifest()
+        except BE.BatchError as e:
+            print('伤害作用域错误: %s' % e); sys.exit(1)
+    try:
+        rows = BE.plan_batch(elf, name_map, args.scope, args.ratio, sids, manifest,
+                              include_amounts=getattr(args, 'include_amounts', False))
+    except BE.BatchError as e:
+        print('批量计划失败: %s' % e); sys.exit(1)
+    # 预览表
+    print('作用域=%s(%s)  比例=%.3f  技能数=%d  模式=%s  include_amounts=%s' % (
+        args.scope, BE.SCOPE_LABEL.get(args.scope, ''), args.ratio, len(sids), mode,
+        getattr(args, 'include_amounts', False)))
+    print('%-6s %-13s %-20s %-9s %-6s %-9s %-9s %-9s %s' % (
+        'SID', '名称', '方法', '偏移', '类型', '旧值', '新值', '角色', '状态/备注'))
+    print('-' * 130)
+    for r in rows:
+        offs = ('0x%x' % r['off']) if r['off'] and r['off'] >= 0 else '-'
+        st = {'apply': '将修改', 'skip_shared': '跳过-共享', 'skip_no_method': '跳过-无自有方法',
+              'skip_error': '跳过-错误', 'skip_role': '跳过-角色', 'skip_guard': '跳过-字节守卫'}.get(
+            r['status'], r['status'])
+        print('%-6d %-13s %-20s %-9s %-6s %-9s %-9s %-9s %s %s' % (
+            r['sid'], (r['name'] or '')[:13], (r['method'] or '')[-20:], offs, r['kind'],
+            str(r['old'])[:9], str(r['new'])[:9], str(r.get('role', ''))[:9], st, r.get('note', '')))
+    n_app = sum(1 for r in rows if r['status'] == 'apply')
+    n_sh = sum(1 for r in rows if r['status'] == 'skip_shared')
+    n_no = sum(1 for r in rows if r['status'] == 'skip_no_method')
+    n_rl = sum(1 for r in rows if r['status'] == 'skip_role')
+    n_gd = sum(1 for r in rows if r['status'] == 'skip_guard')
+    n_er = sum(1 for r in rows if r['status'] == 'skip_error')
+    print('-' * 130)
+    print('合计：将修改 %d 处 | 共享跳过 %d | 无自有方法跳过 %d | 角色跳过 %d | 字节守卫跳过 %d | 错误跳过 %d' % (
+        n_app, n_sh, n_no, n_rl, n_gd, n_er))
+    if args.dry_run:
+        print('[dry-run] 未写文件。')
+        return
+    if n_app == 0:
+        print('没有可应用的修改，未备份、未写文件。'); return
+    try:
+        res = BE.apply_batch(rows, args.gs, 'batch_%s' % args.scope)
+    except BE.BatchError as e:
+        print('应用失败: %s' % e); sys.exit(1)
+    print('已备份原 gs -> %s' % res['bak'])
+    print('已写回 -> %s' % args.gs)
+    print('回读校验: %s（应用 %d 处）' % ('通过' if res['verified'] else '未通过!', res['n_apply']))
+    for a in res['applied']:
+        print('  SID %d @0x%x %s: %s -> %s' % (a['sid'], a['off'], a['kind'], a['oldv'], a['newv']))
+
+
 def main():
     ap = argparse.ArgumentParser(description='完美世界单机 gs 技能查看/修改工具')
     common = argparse.ArgumentParser(add_help=False)
@@ -446,6 +553,15 @@ def main():
     p_mod.add_argument('--value', action='append', metavar='新值')
     p_mod.add_argument('--out', default=None)
     p_exp = sub.add_parser('export-db', parents=[common]); p_exp.add_argument('--out', default=OUT_DEFAULT)
+    p_bm = sub.add_parser('batch-modify', parents=[common])
+    p_bm.add_argument('--scope', required=True, choices=['damage', 'cooldown', 'cast', 'release'])
+    p_bm.add_argument('--ratio', required=True, type=float, help='缩放倍数（如 1.5）')
+    p_bm.add_argument('--skills', default='', help='逗号分隔技能ID，如 1728,1729')
+    p_bm.add_argument('--zhen', action='store_true', help='选中全部 真· 技能')
+    p_bm.add_argument('--kuang', action='store_true', help='选中全部 狂· 技能')
+    p_bm.add_argument('--all', action='store_true', help='选中全部技能')
+    p_bm.add_argument('--include-amounts', action='store_true', help='damage 作用域额外缩放 role=效果数值(SetAmount)')
+    p_bm.add_argument('--dry-run', action='store_true', help='只打印预览表，不改文件')
     a = ap.parse_args()
 
     if not os.path.exists(a.gs):
@@ -474,6 +590,8 @@ def main():
         apply_mods(elf, sid, sets, off_edits, a.gs, out)
     elif a.cmd == 'export-db':
         export_db(elf, name_map, desc_map, a.out)
+    elif a.cmd == 'batch-modify':
+        run_batch(elf, name_map, a)
 
 if __name__ == '__main__':
     main()

@@ -56,6 +56,8 @@
   .savebar{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .log{font-size:12px;color:var(--good);background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:9px;margin-top:10px;white-space:pre-wrap;display:none;}
   .log.err{color:#b91c1c;background:#fef2f2;border-color:#fecaca;}
+  .dmgrow .dmgval{color:#b91c1c;font-weight:700;}
+  table.edittable tbody tr td.dmgval{}
 </style>
 </head>
 <body>
@@ -72,7 +74,8 @@
     <span class="hint" style="font-size:11px">勾选后，基础技能会同面板列出其 真·/狂· 变体，一起保存</span>
   </label>
   <span style="flex:1"></span>
-  <a href="/attackspeed" style="font-size:13px;color:var(--acc);text-decoration:none">⚡ 攻速上限修改 →</a>
+  <a href="/batch" style="font-size:13px;color:var(--acc);text-decoration:none">🧮 批量按比例修改 →</a>
+  <a href="/attackspeed" style="font-size:13px;color:var(--acc);text-decoration:none;margin-left:14px">⚡ 攻速上限修改 →</a>
   <button class="btn green" id="btnSave" disabled>保存修改（自动备份）</button>
 </div>
 <div class="wrap">
@@ -254,6 +257,24 @@ function renderSection(api, label){
 
   const cleanDesc = (api.desc||'').replace(/\^\s*[0-9a-fA-F]{6}/g,'').trim();
 
+  // 真/狂伤害标注（来自 manifest）
+  let dmgNoteHtml = '';
+  if(api.damage_note){
+    const dn = api.damage_note;
+    const rows = (dn.constants||[]).map(c=>`
+      <tr class="${c.shared?'':'dmgrow'}">
+        <td style="font-family:monospace;font-size:11px">${c.method||''}</td>
+        <td style="font-family:monospace">${c.file_off||''}</td>
+        <td>${c.kind}</td>
+        <td class="${c.shared?'':'dmgval'}">${c.value}</td>
+        <td>${c.shared?'<span class="sh">⚠共享(refs='+c.refs+')</span>':'✓自有'}</td>
+        <td>${c.role||''}</td></tr>`).join('');
+    dmgNoteHtml = `<div class="sec"><h3 style="border-left-color:#b91c1c">★ 真/狂伤害标注（variant=${dn.variant||'—'} base=${dn.base_skill_id||'—'} analysis=${dn.analysis||'—'}）</h3>
+      <div class="hint" style="margin:4px 0">${dn.note||''}</div>
+      <table class="edittable"><thead><tr><th>方法</th><th>偏移</th><th>类型</th><th>当前值</th><th>共享?</th><th>角色</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }
+
   // 各级伤害/效果表（perlevel：状态N 每级数值 + 公式）
   const LV=[1,2,3,4,5,6,7,8,9,10];
   let perlevelHtml='';
@@ -293,6 +314,7 @@ function renderSection(api, label){
         </div>
       </details>
       <div class="grid">${stats.map(s=>`<div class="stat"><div class="k">${s[0]}</div><div class="v">${s[1]}</div></div>`).join('')}</div>
+      ${dmgNoteHtml}
       ${perlevelHtml}
       ${lvTable}
       ${dmgSections}

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>完美世界单机 · 批量按比例修改技能</title>
+<style>
+  :root{--bg:#f5f7fa;--card:#fff;--line:#e3e8ef;--txt:#1f2937;--sub:#6b7280;--acc:#2563eb;--good:#16a34a;--warn:#d97706;--skip:#94a3b8;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:"Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--txt);}
+  header{background:linear-gradient(120deg,#1e3a8a,#7c3aed);color:#fff;padding:16px 24px;}
+  header h1{font-size:20px;}
+  header p{font-size:12px;opacity:.85;margin-top:4px;}
+  .bar{padding:12px 24px;display:flex;gap:12px;align-items:center;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .btn{background:var(--acc);color:#fff;border:none;padding:9px 16px;border-radius:7px;font-size:14px;cursor:pointer;}
+  .btn:hover{filter:brightness(1.06);}
+  .btn.grey{background:#64748b;}
+  .btn.green{background:var(--good);}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;}
+  .hint{font-size:13px;color:var(--sub);}
+  .wrap{max-width:1180px;margin:18px auto;padding:0 24px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;}
+  .formrow{display:flex;align-items:center;gap:12px;margin:12px 0;flex-wrap:wrap;}
+  .formrow label{font-size:14px;min-width:96px;}
+  .formrow select,.formrow input{padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;}
+  .formrow input[type=text]{width:260px;}
+  .formrow input[type=number]{width:120px;}
+  .radio{display:flex;gap:16px;font-size:14px;align-items:center;}
+  .radio label{min-width:0;display:flex;gap:5px;align-items:center;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap;}
+  th{background:#f1f5f9;}
+  tr.st-apply td{background:#f0fdf4;}
+  tr.st-skip_shared td{background:#f8fafc;color:var(--warn);}
+  tr.st-skip_no_method td{background:#f8fafc;color:var(--skip);}
+  tr.st-skip_error td{background:#fef2f2;color:#b91c1c;}
+  .badge{font-size:11px;padding:1px 7px;border-radius:9px;}
+  .b-apply{background:#dcfce7;color:#15803d;}
+  .b-shared{background:#fef3c7;color:#b45309;}
+  .b-nomethod{background:#e2e8f0;color:#64748b;}
+  .b-err{background:#fee2e2;color:#b91c1c;}
+  .sum{font-size:13px;margin-top:10px;color:#334155;}
+  .log{font-size:13px;color:var(--good);background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px;margin-top:12px;white-space:pre-wrap;display:none;}
+  .log.err{color:#b91c1c;background:#fef2f2;border-color:#fecaca;}
+  .back{font-size:13px;color:#fff;opacity:.85;text-decoration:none;}
+  .note{font-size:12px;color:var(--sub);line-height:1.7;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>批量按比例修改技能参数</h1>
+  <p>作用域（伤害/冷却/吟唱/释放）× 比例倍数 × 技能范围 → 预览 → 应用（自动备份+回读校验）</p>
+</header>
+<div class="bar">
+  <button class="btn" id="btnLoad">① 读取 gs</button>
+  <input type="file" id="fileInput" accept="*" style="display:none">
+  <span class="hint" id="gsHint">尚未读取 gs</span>
+  <span style="flex:1"></span>
+  <a class="back" href="/">← 返回技能修改器</a>
+</div>
+<div class="wrap">
+  <div class="card">
+    <div class="formrow">
+      <label>作用域</label>
+      <select id="scope">
+        <option value="cooldown">冷却（GetCoolingtime，毫秒）</option>
+        <option value="cast">吟唱/准备（GetExecutetime，毫秒）</option>
+        <option value="release">释放时间（GetAttackspeed，出手间隔）</option>
+        <option value="damage">伤害（manifest 中非共享伤害常量）</option>
+      </select>
+      <label>比例倍数</label>
+      <input type="number" id="ratio" value="1.5" step="0.1" min="0.1">
+    </div>
+    <div class="formrow">
+      <label>技能范围</label>
+      <div class="radio">
+        <label><input type="radio" name="smode" value="custom" checked> 自定义列表</label>
+        <label><input type="radio" name="smode" value="zhen"> 全部 真·</label>
+        <label><input type="radio" name="smode" value="kuang"> 全部 狂·</label>
+        <label><input type="radio" name="smode" value="all"> 全部技能</label>
+      </div>
+      <input type="text" id="skills" placeholder="自定义技能ID，逗号分隔：1728,1729,602">
+    </div>
+    <div class="formrow">
+      <label>伤害选项</label>
+      <label class="radio"><input type="checkbox" id="includeAmounts"> 含效果数值(SetAmount)
+        <span class="hint" style="font-weight:normal">默认仅放大"主伤害"；勾选后连"效果数值"一起乘（时长/表现/标记/debuff/系数永不乘）</span></label>
+    </div>
+    <div class="formrow">
+      <button class="btn" id="btnPreview">② 预览</button>
+      <button class="btn green" id="btnApply" disabled>③ 应用（备份+写回+校验）</button>
+    </div>
+    <div class="note">
+      作用域映射（经 .symtab 实证）：冷却→GetCoolingtime；吟唱/准备→GetExecutetime；
+      释放时间→GetAttackspeed（gs 无独立 GetReleaseTime/GetCastTime 符号，出手间隔=floor(攻速×0.8)−1）；
+      伤害→skill_damage_manifest.json 中 shared=false 的常量。<br>
+      规则：只改技能「自有方法」常量；共享常量（refs&gt;1）一律跳过；无自有方法（继承默认）的技能跳过；
+      int 缩放后须 &gt;0 且 int32 内，float 须有限。
+    </div>
+  </div>
+
+  <div class="card" id="pvCard" style="display:none">
+    <h3 style="font-size:15px;margin-bottom:6px">预览表</h3>
+    <table>
+      <thead><tr><th>SID</th><th>名称</th><th>方法</th><th>偏移</th><th>类型</th><th>旧值</th><th>新值</th><th>角色</th><th>状态</th><th>备注</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="sum" id="sum"></div>
+  </div>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let lastRows=null;
+$('btnLoad').onclick=()=>$('fileInput').click();
+$('fileInput').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $('btnLoad').disabled=true; $('btnLoad').textContent='解析中…';
+  try{
+    const buf=await f.arrayBuffer();
+    const r=await fetch('/api/load',{method:'POST',body:buf});
+    const j=await r.json();
+    if(j.error){alert(j.error);return;}
+    $('gsHint').textContent='已读取：'+j.filename+'（'+j.count+' 技能）';
+    $('btnApply').disabled=false;
+  }catch(err){alert('读取失败：'+err);}
+  finally{$('btnLoad').disabled=false;$('btnLoad').textContent='① 读取 gs';}
+};
+function setMode(){ return document.querySelector('input[name=smode]:checked').value; }
+function collect(){
+  const sm=setMode();
+  let skills=[];
+  if(sm==='custom'){
+    skills=$('skills').value.split(/[,，\s]+/).map(s=>parseInt(s,10)).filter(x=>!isNaN(x));
+    if(!skills.length){alert('请填写自定义技能ID');return null;}
+  }
+  return {scope:$('scope').value, ratio:parseFloat($('ratio').value), skills, set_mode:sm,
+          include_amounts:$('includeAmounts').checked};
+}
+function renderRows(rows){
+  const tb=$('tbody'); tb.innerHTML='';
+  for(const r of rows){
+    const tr=document.createElement('tr');
+    const badge={apply:['将修改','b-apply'],skip_shared:['共享跳过','b-shared'],skip_no_method:['无自有方法','b-nomethod'],skip_role:['角色跳过','b-shared'],skip_guard:['字节守卫跳过','b-err'],skip_error:['错误跳过','b-err']}[r.status]||[r.status,''];
+    tr.className='st-'+r.status;
+    tr.innerHTML=`<td>${r.sid}</td><td>${r.name||''}</td><td style="font-family:monospace;font-size:11px">${(r.method||'').split('Stub').pop()}</td>
+      <td style="font-family:monospace">${r.off>=0?('0x'+r.off.toString(16)):'—'}</td><td>${r.kind}</td>
+      <td>${r.old}</td><td>${r.new}</td><td>${r.role||'—'}</td><td><span class="badge ${badge[1]}">${badge[0]}</span></td>
+      <td style="color:var(--sub)">${r.note||''}</td>`;
+    tb.appendChild(tr);
+  }
+}
+async function callBatch(mode){
+  const p=collect(); if(!p) return;
+  p.mode=mode;
+  const log=$('log');
+  try{
+    const r=await fetch('/api/batch-modify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+    const j=await r.json();
+    if(j.error && mode==='preview'){ log.style.display='block'; log.className='log err'; log.textContent='预览失败：'+j.error; return; }
+    $('pvCard').style.display='block';
+    lastRows=j.rows||[];
+    renderRows(lastRows);
+    $('sum').textContent=`作用域 ${j.scope_label}（${j.scope}）×${j.ratio}，技能数 ${j.n_skills}：将修改 ${j.n_apply} 处 | 共享跳过 ${j.n_shared} | 无自有方法跳过 ${j.n_no_method} | 角色跳过 ${j.n_role||0} | 字节守卫跳过 ${j.n_guard||0} | 错误跳过 ${j.n_error}`;
+    if(mode==='apply'){
+      if(j.error){ log.style.display='block'; log.className='log err'; log.textContent='应用未执行：'+j.error; return; }
+      log.style.display='block'; log.className='log';
+      log.textContent=`✔ 已应用 ${j.applied} 处修改，回读校验${j.verified?'通过':'未通过'}！\n备份：${j.backup}\n当前 gs：${j.current_gs}\n${j.note||''}`;
+    }
+  }catch(err){ log.style.display='block'; log.className='log err'; log.textContent='请求失败：'+err; }
+}
+$('btnPreview').onclick=()=>callBatch('preview');
+$('btnApply').onclick=()=>{
+  if(!lastRows){alert('请先点「预览」');return;}
+  const n=lastRows.filter(r=>r.status==='apply').length;
+  if(!n){alert('没有可应用的修改');return;}
+  if(!confirm('将对 gs 应用 '+n+' 处修改，并自动备份。\n是否继续？'))return;
+  callBatch('apply');
+};
+</script>
+</body>
+</html>
