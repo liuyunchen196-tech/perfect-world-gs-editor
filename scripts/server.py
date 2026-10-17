@@ -189,17 +189,64 @@ def load_skill(elf, skill_id):
     methods = [nm for nm in elf.symtab if marker in nm]
     out = {}
     for nm in methods:
-        if any(t in nm for t in ('D0Ev', 'D1Ev', 'C1Ev')): continue
+        if any(t in nm for t in ('D0Ev', 'D1Ev')): continue
         if nm.endswith('E') and 'StubE' in nm: continue
         if '5array' in nm: continue
         for value, size, shndx in elf.sym(nm):
             if shndx == 0: continue
             sec = elf.sections[shndx] if shndx < len(elf.sections) else None
             if sec and sec['name'] == '.text':
+                if 'C1Ev' in nm:   # 构造函数：专门提取元气(AP)消耗/回复
+                    ap = extract_ap_cost(elf, nm, value, size, shndx)
+                    if ap:
+                        for label, off, ln, cur, kind, shared, ro in ap:
+                            out.setdefault(label, []).append((nm, value, size, [(label, off, ln, cur, kind, shared, ro)]))
+                    continue
                 cat = categorize(nm)
                 consts = extract_method_constants(elf, nm, value, size, shndx)
                 if consts: out.setdefault(cat, []).append((nm, value, size, consts))
     return out
+
+
+# ======================= 元气(AP)消耗/回复 提取 =======================
+# 机制：每个技能在构造函数 Skill{ID}Stub::C1Ev 里
+#   mov dword [reg+0x32], imm32  = 元气(AP)消耗（运行时 Skill::GetApcost 读 [[Skill+0xc]+0x32]）
+#   mov dword [reg+0x2e], imm32  = 元气(AP)回复（Skill::GetApgain  读 [[Skill+0xc]+0x2e]）
+# 字节：C7 /0 [reg+disp8/disp32], imm32
+AP_COST_DISP = 0x32
+AP_GAIN_DISP = 0x2e
+
+def extract_ap_cost(elf, name, value, size, shndx):
+    """扫描构造函数字节，返回 [(label, 文件偏移, 4, 当前值, 'int', False, None)]。"""
+    if shndx == 0: return None
+    sec = elf.sections[shndx] if shndx < len(elf.sections) else None
+    if sec is None or sec['name'] != '.text': return None
+    foff = sec['offset'] + (value - sec['addr'])
+    code = elf.data[foff:foff+size]
+    res = []
+    i = 0; n = len(code)
+    while i < n:
+        if code[i] == 0xC7 and i+1 < n:
+            modrm = code[i+1]
+            mod = (modrm >> 6) & 3
+            reg = (modrm >> 3) & 7
+            if reg == 0 and mod in (1, 2):
+                if mod == 1 and i+7 <= n:      # [reg+disp8]
+                    disp = struct.unpack_from('<b', code, i+2)[0]
+                    if disp in (AP_COST_DISP, AP_GAIN_DISP):
+                        imm = struct.unpack_from('<I', code, i+3)[0]
+                        label = '元气(AP)消耗' if disp == AP_COST_DISP else '元气(AP)回复'
+                        res.append((label, foff+i+3, 4, imm, 'int', False, None))
+                    i += 7; continue
+                elif mod == 2 and i+11 <= n:   # [reg+disp32]
+                    disp = struct.unpack_from('<i', code, i+2)[0]
+                    if disp in (AP_COST_DISP, AP_GAIN_DISP):
+                        imm = struct.unpack_from('<I', code, i+6)[0]
+                        label = '元气(AP)消耗' if disp == AP_COST_DISP else '元气(AP)回复'
+                        res.append((label, foff+i+6, 4, imm, 'int', False, None))
+                    i += 11; continue
+        i += 1
+    return res
 
 
 # ======================= skillstr =======================

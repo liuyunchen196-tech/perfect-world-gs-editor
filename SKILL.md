@@ -15,6 +15,12 @@ description: 完美世界单机（国服 138/144 端）服务端 gs 技能查看
   `State{1..3}GetTime`(状态持续) 等。
 - **技能 ID**：`assets/skillstr.txt` 里 `<idx> "名"`，**技能代码 = idx // 10**（偶数 idx 名称行，奇数 idx 描述块）。
   真/狂变体是独立技能（如 真·剑刃风暴=1728、狂·剑刃风暴=1729）。
+- **元气(AP)消耗/回复**：每个技能在构造函数 `Skill{ID}Stub::C1Ev` 里
+  `mov dword [reg+0x32], imm32` = 元气(AP)消耗（运行时通用 `Skill::GetApcost` 读 `[[Skill+0xc]+0x32]`）、
+  `mov dword [reg+0x2e], imm32` = 元气(AP)回复（`Skill::GetApgain` 读 `[[Skill+0xc]+0x2e]`）。
+  GUI/CLI 会把这两个值作为"元气(AP)消耗 / 元气(AP)回复"展示并可改。注意 skillstr 描述里的
+  "施放需要 N 元气"是客户端 configs.pck 里的展示文字，与服务端 gs 的 AP 值可能不同步，改 gs 的
+  AP 消耗生效的是实际扣减。
 - **常量提取**：反汇编方法，识别 `mov reg,imm32`（int/float 位模式）、`fld`/`fild [rodata]`
   （.rodata 的 float/double）、逐级数组（`mov eax,[eax*4+0x...]`）。每个常量带文件偏移(off)、
   类型、当前值、是否共享。
