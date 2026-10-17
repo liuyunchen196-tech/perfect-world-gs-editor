@@ -278,6 +278,49 @@ def parse_skillstr(path):
         i += 1
     return name_map, desc_map
 
+def update_desc_in_skillstr(sid, new_desc):
+    """把技能 sid 的描述文字写回 skillstr.txt（UTF-16LE，保持颜色标记/CRLF）。
+    skillstr.txt 即 configs.pck 里 skillsrt 的明文提取；改完需用完美 pck 工具打包回 configs.pck 才在游戏内生效。"""
+    path = SKILLSTR
+    if not os.path.exists(path):
+        raise FileNotFoundError('skillstr.txt 不存在: %s' % path)
+    b = open(path, 'rb').read()
+    text = b.decode('utf-16-le')
+    if text and text[0] == '\ufeff':
+        text = text[1:]
+    lines = text.split('\n')
+    idx = sid * 10 + 1
+    prefix = '%d "' % idx
+    i = next((k for k, l in enumerate(lines) if l.startswith(prefix)), None)
+    if i is None:
+        raise ValueError('skillstr 找不到技能 %d 的描述块(idx=%d)' % (sid, idx))
+    j = i
+    while j < len(lines):
+        if j > i and lines[j].rstrip('\r').endswith('"'):
+            break
+        j += 1
+    nd = (new_desc or '').replace('\r\n', '\n').replace('\r', '\n')
+    nl = nd.split('\n')
+    if not nl or nl == ['']:
+        nl = ['']
+    block = ['%d "%s' % (idx, nl[0])]
+    if len(nl) > 1:
+        block.extend(nl[1:-1])
+        block.append(nl[-1] + '"')
+    else:
+        block[0] = block[0] + '"'
+    lines[i:j+1] = block
+    out = ('\ufeff' + '\n'.join(lines)).encode('utf-16-le')
+    try:
+        bakp = os.path.join(BACKUP_DIR, 'skillstr.%s.bak' % time.strftime('%Y%m%d_%H%M%S'))
+        shutil.copy2(path, bakp)
+    except Exception:
+        bakp = None
+    open(path, 'wb').write(out)
+    global desc_map
+    desc_map[sid] = new_desc
+    return bakp
+
 name_map, desc_map = parse_skillstr(SKILLSTR)
 
 # 每级伤害/效果表（由 build_perlevel.py 预计算；build time 用 capstone，运行时仅读 JSON）
@@ -423,6 +466,21 @@ def _route(handler, path, method, body):
             _CURRENT_NAME = 'gs'
             skills = _skill_list(elf)
             _send_json(handler, {'filename': 'gs', 'count': len(skills), 'skills': skills})
+            return
+        if path == '/api/desc':
+            try:
+                payload = json.loads(body.decode('utf-8'))
+                sid = int(payload['sid'])
+                desc = payload['desc']
+            except Exception:
+                _send_json(handler, {'error': '请求格式错误，需 JSON {sid, desc}'}, 400); return
+            try:
+                bakp = update_desc_in_skillstr(sid, desc)
+            except Exception as e:
+                _send_json(handler, {'error': str(e)}, 400); return
+            _send_json(handler, {'ok': True, 'sid': sid, 'name': name_map.get(sid, ''),
+                                 'backup': bakp,
+                                 'note': '已写回 skillstr.txt（明文）。请用完美 pck 工具把 skillsrt 打包回 configs.pck，游戏内描述即更新。'})
             return
         if path == '/api/save':
             if _CURRENT_ELF is None:

@@ -72,6 +72,11 @@ python scripts/gs_tool.py export-db --gs <gs路径> --out <目录>  # 导出 SQL
   跳转后进游戏实测同等级伤害是否一致。
 - **每级伤害表**：`scripts/build_perlevel.py <gs路径>` 用 capstone 重建（仅构建期），结果写入
   `assets/skill_perlevel.json`，GUI 会读取展示各级伤害。
+- **技能描述文字修改**：技能描述（含"施放需要 N 元气"等）在 `assets/skillstr.txt`（UTF-16LE，
+  即 configs.pck 里 skillsrt 的明文提取）。GUI 选中技能后有"技能描述文字"编辑区，改数字/文字后
+  点"保存描述 → skillstr.txt"，后端写回该明文文件并备份。⚠ 游戏内实际显示需把改好的
+  skillstr.txt 用**完美 pck 工具**（如 PckTools）打包回 configs.pck（该 pck 整文件加密，非纯文本）。
+  注意：skillstr 描述里的"施放需要 N 元气"是客户端展示文字，与 gs 的 AP 消耗值可能不同步。
 
 ## 详细文档
 

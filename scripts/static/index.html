@@ -94,6 +94,14 @@ let currentSid = null;
 
 const $ = id => document.getElementById(id);
 const btnSave = $('btnSave');
+const escapeHtml = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+async function saveDesc(sid, btn){
+  const txt = btn.closest('.descEditor').querySelector('.descTxt').value;
+  btn.disabled = true;
+  const r = await fetch('/api/desc', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({sid, desc:txt})}).then(x=>x.json()).catch(()=>({error:'网络/后端错误'}));
+  btn.disabled = false;
+  alert(r.error ? ('保存失败：'+r.error) : ('已写回 skillstr.txt：'+ (r.name||sid) + (r.backup?('（备份 '+r.backup+'）'):'') + '\n\n'+(r.note||'')));
+}
 
 // —— 读取 gs ——
 $('btnLoad').onclick = () => $('fileInput').click();
@@ -173,6 +181,9 @@ function renderDetail(list){
   `;
   $('btnSaveD').onclick = saveEdits;
   $('btnReset').onclick = resetEdits;
+  document.querySelectorAll('[data-save-desc]').forEach(btn=>{
+    btn.onclick = () => saveDesc(parseInt(btn.dataset.saveDesc), btn);
+  });
 }
 
 // —— 渲染单个技能分区 ——
@@ -272,6 +283,15 @@ function renderSection(api, label){
     <div class="shd">${label}：${api.name} <span class="id">技能ID ${api.id} · 武器 ${api.weapon}</span></div>
     <div class="bd">
       ${cleanDesc?`<div class="desc">${cleanDesc}</div>`:''}
+      <details class="sec descEditor"><summary>技能描述文字（改后写回 skillstr.txt，用 pck 工具打包 configs.pck 生效）</summary>
+        <div style="margin-top:8px">
+        <textarea class="descTxt" rows="6" style="width:100%;font-family:monospace;font-size:12px;padding:6px;border:1px solid var(--line);border-radius:6px;box-sizing:border-box">${escapeHtml(api.desc||'')}</textarea>
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn grey" data-save-desc="${api.id}">保存描述 → skillstr.txt</button>
+          <span class="hint">描述含 ^颜色标记，改数字（如"施放需要 N 元气"）后点保存；再用完美 pck 编辑器把 skillsrt 打包回 configs.pck</span>
+        </div>
+        </div>
+      </details>
       <div class="grid">${stats.map(s=>`<div class="stat"><div class="k">${s[0]}</div><div class="v">${s[1]}</div></div>`).join('')}</div>
       ${perlevelHtml}
       ${lvTable}
