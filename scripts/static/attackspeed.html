@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>完美世界单机 · 攻速上限修改</title>
+<style>
+  :root{--bg:#f5f7fa;--card:#fff;--line:#e3e8ef;--txt:#1f2937;--sub:#6b7280;--acc:#2563eb;--good:#16a34a;--warn:#d97706;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:"Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--txt);}
+  header{background:linear-gradient(120deg,#7c2d12,#ea580c);color:#fff;padding:16px 24px;}
+  header h1{font-size:20px;}
+  header p{font-size:12px;opacity:.9;margin-top:4px;}
+  .bar{padding:12px 24px;display:flex;gap:12px;align-items:center;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .btn{background:var(--acc);color:#fff;border:none;padding:9px 16px;border-radius:7px;font-size:14px;cursor:pointer;}
+  .btn:hover{filter:brightness(1.06);}
+  .btn.grey{background:#64748b;}
+  .btn.green{background:var(--good);}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;}
+  .hint{font-size:13px;color:var(--sub);}
+  .wrap{max-width:760px;margin:18px auto;padding:0 24px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;}
+  .row{display:flex;align-items:center;gap:12px;margin:14px 0;flex-wrap:wrap;}
+  .row label{font-size:14px;min-width:110px;}
+  .row input{width:140px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font-size:15px;}
+  .val{font-size:26px;font-weight:800;color:#b45309;}
+  .sub{font-size:12px;color:var(--sub);}
+  .info{font-size:13px;line-height:1.7;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px;margin:12px 0;}
+  .info b{color:#9a3412;}
+  .log{font-size:13px;color:var(--good);background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px;margin-top:12px;white-space:pre-wrap;display:none;}
+  .log.err{color:#b91c1c;background:#fef2f2;border-color:#fecaca;}
+  .back{display:inline-block;margin:14px 24px;font-size:13px;color:var(--acc);text-decoration:none;}
+</style>
+</head>
+<body>
+<header>
+  <h1>完美世界单机 · 攻速上限修改</h1>
+  <p>读取 gs → 查看攻速上限 → 设置为 8 次/秒 → 保存自动备份并更新 gs</p>
+</header>
+<div class="bar">
+  <button class="btn" id="btnLoad">① 读取 gs</button>
+  <input type="file" id="fileInput" accept="*" style="display:none">
+  <span class="hint" id="gsHint">尚未读取 gs</span>
+  <a class="back" href="/">← 返回技能修改器</a>
+</div>
+<div class="wrap">
+  <div class="card">
+    <div class="info">
+      攻速限制函数：<b>property_policy::UpdateAttack(int, gactive_imp*)</b><br>
+      该函数把角色攻速值夹取到 <b>[5, 300]</b>（下限 5、上限 <b>0x12c = 300</b>，cmp+mov 两处立即数），
+      出手间隔 obj+0x264 = floor(攻速×0.8)−1。<br>
+      <b>攻速值 = 每秒攻击次数</b>。默认 300 次/秒（近乎无限制），可改为你想要的数值，例如 <b>8 次/秒</b>。
+    </div>
+    <div class="row">
+      <label>当前攻速上限</label>
+      <div>
+        <span class="val" id="curVal">—</span>
+        <span class="sub" id="curSub"></span>
+      </div>
+    </div>
+    <div class="row">
+      <label>改为（次/秒）</label>
+      <input id="newVal" type="number" min="1" max="100000" value="8">
+      <button class="btn green" id="btnSet" disabled>保存修改（自动备份）</button>
+    </div>
+    <div class="row">
+      <label>对应出手间隔</label>
+      <div>
+        <span class="val" id="intervalVal" style="font-size:18px">—</span>
+        <span class="sub" id="intervalSub"></span>
+      </div>
+    </div>
+    <div class="sub">提示：攻速值=每秒攻击次数(夹取[5,300])，出手间隔 obj+0x264 = floor(攻速×0.8)−1。
+      改上限为 8 即最高 8 次/秒（出手间隔 ≥ floor(8×0.8)−1 = 5）。</div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const btnSet=$('btnSet');
+$('btnLoad').onclick=()=>$('fileInput').click();
+$('fileInput').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  $('btnLoad').disabled=true; $('btnLoad').textContent='读取中…';
+  try{
+    const buf=await f.arrayBuffer();
+    const r=await fetch('/api/load',{method:'POST',body:buf});
+    const j=await r.json();
+    if(j.error){alert(j.error);return;}
+    $('gsHint').textContent='已读取：'+j.filename+'（'+j.count+' 技能）';
+    await refresh();
+  }catch(err){alert('读取失败：'+err);}
+  finally{$('btnLoad').disabled=false;$('btnLoad').textContent='① 读取 gs';}
+};
+async function refresh(){
+  const r=await fetch('/api/attackspeed');
+  const j=await r.json();
+  if(j.error){alert(j.error);return;}
+  $('curVal').textContent=j.current;
+  $('curSub').textContent=' = 最多 '+j.current+' 次/秒';
+  if(j.interval!==undefined){ $('intervalVal').textContent='≈'+j.interval; $('intervalSub').textContent='(floor('+j.current+'×0.8)−1，obj+0x264 出手间隔)'; }
+  $('newVal').value=8;
+  btnSet.disabled=false;
+}
+$('btnSet').onclick=async()=>{
+  const val=parseInt($('newVal').value,10);
+  if(!val||val<1){alert('请输入有效攻速值');return;}
+  if(!confirm('将攻速上限由 '+$('curVal').textContent+' 改为 '+val+' 次/秒，并自动备份原 gs。\n是否继续？'))return;
+  const log=$('log'); log.style.display='block'; log.className='log'; log.textContent='保存中…';
+  try{
+    const r=await fetch('/api/attackspeed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:val})});
+    const j=await r.json();
+    if(j.error){log.className='log err';log.textContent='失败：'+j.error;return;}
+    log.className='log';
+    log.textContent='✔ 攻速上限已由 '+j.old+' 改为 '+j.new+' 次/秒，回读校验'+((j.verified)?'通过':'未通过')+'！\n对应出手间隔 ≈ floor('+j.new+'×0.8)−1 = '+(Math.floor(j.new*0.8)-1)+'\n备份：'+j.backup+'\n当前 gs：'+j.current_gs+'\n'+j.note;
+    $('curVal').textContent=j.new;
+    $('intervalVal').textContent='≈'+(Math.floor(j.new*0.8)-1);
+  }catch(err){log.className='log err';log.textContent='失败：'+err;}
+};
+</script>
+</body>
+</html>

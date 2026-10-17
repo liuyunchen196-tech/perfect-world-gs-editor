@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>完美世界单机 · 技能修改器</title>
+<style>
+  :root{--bg:#f5f7fa;--card:#fff;--line:#e3e8ef;--txt:#1f2937;--sub:#6b7280;--acc:#2563eb;--good:#16a34a;--warn:#d97706;--link:#fbbf24;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:"Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--txt);}
+  header{background:linear-gradient(120deg,#1e3a8a,#2563eb);color:#fff;padding:16px 24px;}
+  header h1{font-size:20px;}
+  header p{font-size:12px;opacity:.85;margin-top:4px;}
+  .bar{padding:12px 24px;display:flex;gap:12px;align-items:center;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .btn{background:var(--acc);color:#fff;border:none;padding:9px 16px;border-radius:7px;font-size:14px;cursor:pointer;}
+  .btn:hover{filter:brightness(1.06);}
+  .btn.grey{background:#64748b;}
+  .btn.green{background:var(--good);}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;}
+  .hint{font-size:13px;color:var(--sub);}
+  .chk{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none;}
+  .chk input{width:16px;height:16px;accent-color:var(--acc);}
+  .chk .tag{color:var(--link);font-size:11px;border:1px solid var(--link);border-radius:4px;padding:0 4px;margin-left:4px;}
+  .wrap{display:flex;gap:14px;padding:14px 24px;max-width:1560px;margin:0 auto;}
+  .left{flex:0 0 360px;background:var(--card);border:1px solid var(--line);border-radius:10px;height:calc(100vh - 190px);display:flex;flex-direction:column;overflow:hidden;}
+  .right{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;height:calc(100vh - 190px);overflow:auto;padding:18px;}
+  .search{padding:10px;border-bottom:1px solid var(--line);}
+  .search input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;}
+  .list{flex:1;overflow:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{background:#f1f5f9;position:sticky;top:0;font-size:12px;color:var(--sub);}
+  tr.row{cursor:pointer;}
+  tr.row:hover{background:#f0f7ff;}
+  tr.row.sel{background:#e0f2fe;}
+  .ph{color:var(--sub);text-align:center;margin-top:60px;font-size:14px;}
+  .ph2{color:var(--sub);text-align:center;margin-top:120px;font-size:14px;}
+  .secbox{border:1px solid var(--line);border-radius:10px;margin-bottom:18px;overflow:hidden;}
+  .secbox > .shd{background:linear-gradient(120deg,#eef2ff,#e0f2fe);padding:9px 14px;font-size:15px;font-weight:700;display:flex;gap:10px;align-items:center;}
+  .secbox > .shd .id{font-size:12px;color:var(--sub);font-weight:400;}
+  .secbox > .bd{padding:14px;}
+  .sec{margin-top:14px;}
+  .sec h3{font-size:14px;margin-bottom:7px;padding-left:8px;border-left:3px solid var(--acc);}
+  .desc{font-size:12px;color:#374151;line-height:1.6;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px;white-space:pre-wrap;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px;margin-top:10px;}
+  .stat{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px;}
+  .stat .k{font-size:11px;color:var(--sub);}
+  .stat .v{font-size:15px;font-weight:600;margin-top:3px;}
+  .edittable{width:100%;border-collapse:collapse;font-size:12px;}
+  .edittable th,.edittable td{border:1px solid var(--line);padding:6px 8px;}
+  .edittable th{background:#f1f5f9;text-align:left;}
+  .edittable input{width:110px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:12px;}
+  .edittable .sh{color:var(--warn);font-size:11px;}
+  .lvtable input{width:64px;}
+  .fml{font-size:11px;color:var(--sub);font-family:Consolas,Menlo,monospace;white-space:pre-wrap;word-break:break-all;margin-top:2px;}
+  .savebar{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .log{font-size:12px;color:var(--good);background:#f0fdf4;border:1px solid #bbf7d0;border-radius:7px;padding:9px;margin-top:10px;white-space:pre-wrap;display:none;}
+  .log.err{color:#b91c1c;background:#fef2f2;border-color:#fecaca;}
+</style>
+</head>
+<body>
+<header>
+  <h1>完美世界单机 · 技能修改器（离线本地）</h1>
+  <p>读取 gs → 选择技能 → 查看/修改伤害公式、每级需求与效果 → 保存自动更新 gs 并备份</p>
+</header>
+<div class="bar">
+  <button class="btn" id="btnLoad">① 读取 gs</button>
+  <input type="file" id="fileInput" accept="*" style="display:none">
+  <span class="hint" id="gsHint">尚未读取 gs</span>
+  <label class="chk"><input type="checkbox" id="chkLink" checked>
+    仙魔联动 <span class="tag">真/狂同改</span>
+    <span class="hint" style="font-size:11px">勾选后，基础技能会同面板列出其 真·/狂· 变体，一起保存</span>
+  </label>
+  <span style="flex:1"></span>
+  <a href="/attackspeed" style="font-size:13px;color:var(--acc);text-decoration:none">⚡ 攻速上限修改 →</a>
+  <button class="btn green" id="btnSave" disabled>保存修改（自动备份）</button>
+</div>
+<div class="wrap">
+  <div class="left">
+    <div class="search"><input id="q" placeholder="搜索技能名…（如 凌风 / 横扫千军）"></div>
+    <div class="list">
+      <table><thead><tr><th>ID</th><th>技能名</th><th>武器限制</th></tr></thead><tbody id="tbody"></tbody></table>
+    </div>
+  </div>
+  <div class="right">
+    <div class="ph2" id="ph">👈 先点「读取 gs」，再在左侧点选要查看/修改的技能</div>
+    <div id="detail" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+let skills = [];
+let currentSid = null;
+
+const $ = id => document.getElementById(id);
+const btnSave = $('btnSave');
+
+// —— 读取 gs ——
+$('btnLoad').onclick = () => $('fileInput').click();
+$('fileInput').onchange = async e => {
+  const file = e.target.files[0];
+  if(!file) return;
+  $('btnLoad').disabled = true; $('btnLoad').textContent = '解析中…';
+  try{
+    const buf = await file.arrayBuffer();
+    const r = await fetch('/api/load', {method:'POST', body: buf});
+    const j = await r.json();
+    if(j.error){ alert(j.error); return; }
+    skills = j.skills;
+    $('gsHint').textContent = `已读取：${j.filename}（${j.count} 个技能）`;
+    renderSkills();
+    $('ph').style.display='none'; $('detail').style.display='none';
+    btnSave.disabled = true;
+  }catch(err){ alert('读取失败：'+err); }
+  finally{ $('btnLoad').disabled=false; $('btnLoad').textContent='① 读取 gs'; }
+};
+
+function renderSkills(){
+  const q = $('q').value.trim().toLowerCase();
+  const tb = $('tbody'); tb.innerHTML='';
+  const all = skills.filter(s=>!q || s.name.toLowerCase().includes(q));
+  if(all.length===0){ tb.innerHTML='<tr><td colspan=3 style="text-align:center;color:var(--sub)">无匹配技能</td></tr>'; return; }
+  for(const s of all){
+    const tr = document.createElement('tr'); tr.className='row';
+    tr.innerHTML = `<td>${s.id}</td><td>${s.name}</td><td>${s.weapon||'—'}</td>`;
+    tr.onclick = () => openSkill(s.id, tr);
+    tb.appendChild(tr);
+  }
+}
+$('q').addEventListener('input', renderSkills);
+
+// —— 变体映射：按名字 真·/狂· ——
+function variantsOf(baseName){
+  const zhen = skills.find(s => s.name === ('真·' + baseName));
+  const kuang = skills.find(s => s.name === ('狂·' + baseName));
+  return {zhen: zhen ? zhen.id : null, kuang: kuang ? kuang.id : null};
+}
+
+// —— 打开技能 ——
+async function openSkill(id, tr){
+  document.querySelectorAll('tr.row.sel').forEach(x=>x.classList.remove('sel'));
+  tr.classList.add('sel');
+  currentSid = id;
+  $('ph').style.display='none';
+  $('detail').style.display='block';
+  $('detail').innerHTML = '<div class="ph">加载技能详情…</div>';
+  try{
+    const base = await fetch('/api/skill/'+id).then(r=>r.json());
+    if(base.error){ $('detail').innerHTML='<div class="ph">'+base.error+'</div>'; return; }
+    const list = [base];
+    if($('chkLink').checked){
+      const v = variantsOf(base.name);
+      if(v.zhen) list.push(await fetch('/api/skill/'+v.zhen).then(r=>r.json()));
+      if(v.kuang) list.push(await fetch('/api/skill/'+v.kuang).then(r=>r.json()));
+    }
+    renderDetail(list);
+    btnSave.disabled = false;
+  }catch(err){ $('detail').innerHTML='<div class="ph">加载失败：'+err+'</div>'; }
+}
+
+function renderDetail(list){
+  const html = list.map((api,idx)=>{
+    const label = idx===0 ? '基础版' : (api.name.startsWith('真·') ? '真·版' : '狂·版');
+    return renderSection(api, label);
+  }).join('');
+  $('detail').innerHTML = html + `
+    <div class="savebar">
+      <button class="btn green" id="btnSaveD">保存修改（备份并更新 gs）</button>
+      <button class="btn grey" id="btnReset">还原所有为当前值</button>
+      <span class="hint">修改后点保存；共享常量(⚠)已禁用</span>
+    </div>
+    <div class="log" id="log"></div>
+  `;
+  $('btnSaveD').onclick = saveEdits;
+  $('btnReset').onclick = resetEdits;
+}
+
+// —— 渲染单个技能分区 ——
+function renderSection(api, label){
+  const stats = [];
+  const pick = cats => { for(const c of cats){ if(api.groups[c] && api.groups[c].length){ const it=api.groups[c][0]; return it.cur; } } return '—'; };
+  stats.push(['冷却(ms)', pick(['冷却时长(毫秒)'])]);
+  stats.push(['施放(ms)', pick(['施放/准备(毫秒)'])]);
+  stats.push(['攻速', pick(['攻击速度'])]);
+  stats.push(['范围', pick(['范围'])]);
+  stats.push(['攻击距离', pick(['攻击距离'])]);
+  stats.push(['效果距离', pick(['效果距离'])]);
+  stats.push(['施法距离', pick(['施法距离'])]);
+  stats.push(['命中率', pick(['命中率'])]);
+  stats.push(['真气消耗', pick(['真气消耗'])]);
+  stats.push(['仇恨', pick(['仇恨'])]);
+  stats.push(['角度', pick(['角度'])]);
+  stats.push(['状态持续', pick(['状态持续时间(状态1)','状态持续时间(状态2)','状态持续时间(状态3)','状态持续时间'])]);
+
+  // 每级需求/消耗表（array 类型）
+  const arrItems = [];
+  for(const cat of Object.keys(api.groups)){
+    for(const it of (api.groups[cat]||[])){
+      if(it.kind==='array') arrItems.push({cat, off:it.off, vals:it.vals||[], shared:it.shared});
+    }
+  }
+  let lvTable = '';
+  if(arrItems.length){
+    const rows = arrItems.map(a=>`
+      <tr>
+        <td>${a.cat} ${a.shared?'<span class="sh">⚠</span>':''}</td>
+        <td style="font-size:11px;color:var(--sub)">0x${a.off.toString(16)}</td>
+        ${[0,1,2,3,4,5,6,7,8,9].map(i=>`<td><input class="lvinp" data-off="${a.off}" data-idx="${i}" data-orig="${a.vals[i]??''}"
+            value="${a.vals[i]??''}" title="第${i+1}级"></td>`).join('')}
+      </tr>`).join('');
+    lvTable = `<div class="sec"><h3>各级需求 / 消耗表（1~10 级，可直接改）</h3>
+      <table class="edittable lvtable"><thead><tr><th>类别</th><th>偏移</th>
+        ${[1,2,3,4,5,6,7,8,9,10].map(i=>`<th>${i}级</th>`).join('')}
+      </tr></thead><tbody>${rows}</tbody></table>
+      <div class="hint" style="margin-top:4px">说明：技能的伤害/效果为“公式系数”逐级计算（见下方伤害公式，可直接改）；此处为每级等级/元神/金钱等需求表。</div>
+    </div>`;
+  }
+
+  // 伤害公式（状态1/2/3，double/float 系数）
+  const dmgCats = ['伤害/效果(状态1)','伤害/效果(状态2)','伤害/效果(状态3)'];
+  const dmgSections = dmgCats.map(cat=>{
+    const items = (api.groups[cat]||[]).filter(it=>it.kind==='double'||it.kind==='float');
+    if(!items.length) return '';
+    const rows = items.map(it=>`
+      <tr><td>0x${it.off.toString(16)}</td><td>${it.kind}</td><td>${it.cur}</td>
+        <td>${it.shared?'<span class="sh">⚠共享</span>':'—'}</td>
+        <td><input class="inp" data-off="${it.off}" data-kind="${it.kind}" data-cur="${it.cur}"
+            value="${it.cur}" ${it.shared?'disabled':''}></td></tr>`).join('');
+    return `<div class="sec"><h3>${cat.replace('伤害/效果','伤害公式')}（系数，逐级代入计算）</h3>
+      <table class="edittable"><thead><tr><th>偏移</th><th>类型</th><th>当前值</th><th>共享?</th><th>新值</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }).join('');
+
+  // 其它可改（int/double/float，非伤害、非数组）
+  const otherCats = Object.keys(api.groups).filter(c=>!dmgCats.includes(c) && c!=='其它');
+  const otherRows = otherCats.flatMap(cat=> (api.groups[cat]||[])
+    .filter(it=>['int','double','float'].includes(it.kind))
+    .map(it=>`
+      <tr><td>${cat}</td><td>0x${it.off.toString(16)}</td><td>${it.kind}</td><td>${it.cur}</td>
+        <td>${it.shared?'<span class="sh">⚠共享</span>':'—'}</td>
+        <td><input class="inp" data-off="${it.off}" data-kind="${it.kind}" data-cur="${it.cur}"
+            value="${it.cur}" ${it.shared?'disabled':''}></td></tr>`)).join('');
+
+  const cleanDesc = (api.desc||'').replace(/\^\s*[0-9a-fA-F]{6}/g,'').trim();
+
+  // 各级伤害/效果表（perlevel：状态N 每级数值 + 公式）
+  const LV=[1,2,3,4,5,6,7,8,9,10];
+  let perlevelHtml='';
+  if(api.perlevel){
+    const states=[];
+    for(const st of ['状态1','状态2','状态3']){
+      const p=api.perlevel[st];
+      if(p && p.values && p.values['1'] && p.values['1'].length) states.push({st,p});
+    }
+    if(states.length){
+      perlevelHtml = `<div class="sec"><h3>各级伤害 / 效果表（等级 1~10，按公式逐级推算）</h3>` +
+        states.map(({st,p})=>{
+          const formulas=p.formulas||[];
+          const rows=(p.values['1']||[]).map((_,oi)=>{
+            const f=formulas[oi]||'';
+            const cells=LV.map(L=>`<td>${(p.values[String(L)]||[])[oi]??''}</td>`).join('');
+            return `<tr><td style="min-width:200px">输出${oi+1}<div class="fml">${f}</div></td>${cells}</tr>`;
+          }).join('');
+          return `<div class="sec"><h4 style="font-size:12px;margin:8px 0 4px;color:#4338ca">${st}</h4>
+            <table class="edittable"><thead><tr><th>输出 / 公式</th>${LV.map(i=>`<th>${i}级</th>`).join('')}</tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+        }).join('') + `<div class="hint" style="margin-top:6px">说明：数值=把等级 L=1~10 代入伤害/效果公式所得（可在下方"伤害公式"改系数后重读刷新）。</div></div>`;
+    }
+  }
+
+  return `<div class="secbox">
+    <div class="shd">${label}：${api.name} <span class="id">技能ID ${api.id} · 武器 ${api.weapon}</span></div>
+    <div class="bd">
+      ${cleanDesc?`<div class="desc">${cleanDesc}</div>`:''}
+      <div class="grid">${stats.map(s=>`<div class="stat"><div class="k">${s[0]}</div><div class="v">${s[1]}</div></div>`).join('')}</div>
+      ${perlevelHtml}
+      ${lvTable}
+      ${dmgSections}
+      ${otherRows?`<div class="sec"><h3>其它可改特性（冷却/施放/范围/消耗/命中/要求…）</h3>
+        <table class="edittable"><thead><tr><th>类别</th><th>偏移</th><th>类型</th><th>当前值</th><th>共享?</th><th>新值</th></tr></thead>
+        <tbody>${otherRows}</tbody></table></div>`:''}
+    </div>
+  </div>`;
+}
+
+// —— 收集所有编辑（跨分区，偏移在文件内唯一） ——
+function collectEdits(){
+  const edits = [];
+  document.querySelectorAll('input.inp').forEach(inp=>{
+    const off=+inp.dataset.off, kind=inp.dataset.kind, cur=inp.dataset.cur, val=inp.value.trim();
+    if(val!=='' && val!==cur) edits.push({off, kind, val});
+  });
+  // 每级需求表（数组）按偏移聚合 10 个值，与渲染时记录的 data-orig 比较判断是否改动
+  const arrMap = {};
+  document.querySelectorAll('input.lvinp').forEach(inp=>{
+    const off=+inp.dataset.off, idx=+inp.dataset.idx, v=inp.value.trim();
+    const m = (arrMap[off] = arrMap[off] || {vals:new Array(10), changed:false});
+    m.vals[idx] = (v==='') ? '0' : v;
+    if(inp.dataset.orig !== undefined && v !== inp.dataset.orig) m.changed = true;
+  });
+  for(const off in arrMap){
+    if(arrMap[off].changed) edits.push({off:+off, kind:'array', val: arrMap[off].vals.join(',')});
+  }
+  return edits;
+}
+function resetEdits(){
+  document.querySelectorAll('input.inp').forEach(inp=> inp.value = inp.dataset.cur);
+  document.querySelectorAll('input.lvinp').forEach(inp=> { if(inp.dataset.orig) inp.value=inp.dataset.orig; });
+}
+
+async function saveEdits(){
+  const edits = collectEdits();
+  if(!edits.length){ alert('没有修改内容'); return; }
+  if(!confirm('将对 gs 应用 '+edits.length+' 处修改，并自动备份原文件。\n是否继续？')) return;
+  const log = $('log');
+  log.style.display='block'; log.className='log';
+  log.textContent = '正在保存…';
+  try{
+    const r = await fetch('/api/save', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({edits})});
+    const j = await r.json();
+    if(j.error){ log.className='log err'; log.textContent = '保存失败：'+j.error; return; }
+    log.className='log';
+    log.textContent = `✔ 已应用 ${j.applied} 处修改，回读校验${j.verified?'通过':'未通过'}！\n备份：${j.backup}\n当前 gs：${j.current_gs}\n${j.note}`;
+  }catch(err){ log.className='log err'; log.textContent='保存失败：'+err; }
+}
+
+$('btnSave').onclick = saveEdits;
+</script>
+</body>
+</html>
