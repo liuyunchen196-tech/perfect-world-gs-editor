@@ -1,6 +1,6 @@
 ---
 name: perfect-world-gs-editor
-description: 完美世界单机（国服 138/144 端）服务端 gs 技能查看与修改工具。gs 是带 .symtab 符号表的 32 位 ELF，技能特性在 Skill{ID}Stub 的具名方法里。本 skill 反汇编每个技能方法、抽取可改常量（mov imm32 / .rodata 浮点 double/float / 逐级数组），可按名称或偏移修改、自动备份回写校验、导出全技能数据库（SQLite/JSON/CSV），并提供一个纯标准库本地 GUI（读 gs→选技能→仙魔联动→各级伤害表→改值→保存备份）。还支持：① 601 个 真·/狂· 技能伤害全量挖掘（assets/skill_damage_manifest.json，含角色标注/偏移/共享判定）；② 批量按比例修改伤害/冷却/吟唱/释放时间（GUI /batch 页 + CLI batch-modify）；③ 伤害复刻跳转（如剑刃风暴→箭阵）；④ 技能描述文字写回 skillstr.txt；⑤ 攻速上限修改。当用户要求"看/查某技能伤害逻辑、冷却、范围、概率、消耗"、"把某技能改成 XX"、"批量/按比例改技能伤害冷却"、"修改 gs 技能"、"设置攻速/出手间隔上限"、"把某技能伤害复刻成另一技能"、"导出/生成/查看技能数据库"、"更新/写回技能描述"时使用。完全离线，运行期零第三方依赖（仅重建每级伤害表 build_perlevel.py、真狂 dump 需要 capstone）。
+description: 完美世界单机（国服 138/144 端）服务端 gs 技能查看与修改工具。gs 是带 .symtab 符号表的 32 位 ELF，技能特性在 Skill{ID}Stub 的具名方法里。本 skill 反汇编每个技能方法、抽取可改常量（mov imm32 / .rodata 浮点 double/float / 逐级数组），可按名称或偏移修改、自动备份回写校验、导出全技能数据库（SQLite/JSON/CSV），并提供一个纯标准库本地 GUI（读 gs→选技能→仙魔联动→各级伤害表→改值→保存备份）。还支持：① 601 个 真·/狂· 技能伤害全量挖掘（assets/skill_damage_manifest.json，含角色标注/偏移/共享判定）；② 批量按比例修改伤害/冷却/吟唱/释放时间（GUI /batch 页 + CLI batch-modify）；③ 伤害复刻跳转（如剑刃风暴→箭阵）；④ 技能描述文字写回 skillstr.txt；⑤ 攻速上限修改。当用户要求"看/查某技能伤害逻辑、冷却、范围、概率、消耗"、"把某技能改成 XX"、"批量/按比例改技能伤害冷却"、"修改 gs 技能"、"设置攻速/出手间隔上限"、"把某技能伤害复刻成另一技能"、"导出/生成/查看技能数据库"、"更新/写回技能描述"、"element.data/tasks.data 物品/任务数据查看修改"、"游戏内添加物品/背包/仓库/技能（DEBUG 命令）"时使用。完全离线，运行期零第三方依赖（仅重建每级伤害表 build_perlevel.py、真狂 dump 需要 capstone）。⑥ element.data/task.data 物品/装备数据修改：复用 EL 编辑器读改加密数据（scripts/element_manager.py 负责备份原文件→启动 EL 编辑器→保存后分发同步到客户端/服务端→md5 校验），无需破译数据区加密。当用户要求"改 element.data、加物品/装备、改物品/装备数据、同步客户端服务端 element"时使用。
 ---
 
 # 完美世界单机 gs 技能修改器
@@ -131,9 +131,33 @@ python scripts/gs_tool.py export-db --gs <gs路径> --out <目录>  # 导出 SQL
   **已拍板状态（勿回退）**：17280/17290（真/狂剑刃风暴）描述已由 `--to-placeholder` 改为 `%d`
   动态占位，随实际伤害联动；assets/skillstr.txt 与项目资产副本 MD5=FD02CF9C，不要再把数字写回去。
 
+## element.data 物品/装备数据修改（复用 EL 编辑器，推荐）
+
+数据区加密无需破译。分工：**EL 编辑器读/改/写**（GUI，用户操作），**`scripts/element_manager.py` 管备份/启动/分发**。
+
+```
+python scripts/element_manager.py open   <element.data路径>             # 备份→启动EL编辑器打开
+python scripts/element_manager.py backup <element.data路径>             # 备份到同级 备份data/
+python scripts/element_manager.py sync   <已保存文件> --client <p> [--server <p>]  # 备份目标→复制→校验
+python scripts/element_manager.py check  <element.data路径>             # size/mtime/md5
+```
+工作流：`open` 把原文件备份到其所在目录 `备份data/` → `Start-Process` 启动 EL 编辑器（**支持命令行带文件参数直接打开**）→ 用户在「蜜蜂EL编辑器」改并保存 → `sync` 分发客户端/服务端 + md5 校验。
+⚠ EL 编辑器是 Delphi 原生程序，未注册为 Windows 应用，**computer_use GUI 自动化无法启动/操作它**，只能由用户自己在桌面操作窗口，脚本仅负责启动进程。客户端 144 与服务端 138 的 element.data 是不同版本，分发务必匹配版本。详见 `references/element-data.md`。
+
 ## 详细文档
 
 完整使用手册、数据结构、138/144 差异、剑刃风暴/箭阵剖析、批量作用域实证见 `references/README.md`。
+**155 端教程知识（物品/任务/游戏内添加）**：
+- `references/element-data.md`：element.data 路径、字段格式（element.cfg + rtype 字段类型）、
+  头部明文目录结构、**加密现状**、类目/小类代码、物品添加与颜色/描述文本（item_color/item_ext_desc）。
+- `references/tasks-data.md`：tasks.data 位置、任务编辑器用法、与 element.data 关联、格式逆向现状。
+- `references/debug-commands.md`：游戏内 DEBUG 命令大全（Shift+~ 控制台）——添加物品/背包/仓库/
+  扩充背包/元气上限/状态/刷怪/传送等（物品 ID 从 element.data 查）。
+- 技能属性修改与 gs 工具方法（IDA+010 Editor）教程与现有工具一致：apgain=元气(0x2E)、
+  GetExecutetime=施放、GetCoolingtime=冷却、State*GetTime=吟唱、GetPraydistance=距离、
+  GetRadius=范围、GetMpcost=真气；技能描述在 configs.pck 的 skillsrt（即 skillstr.txt）。
+- ⚠ element.data/tasks.data 国服文件**加密**（version2=0x2000），头部明文目录已定位、数据区加密算法
+  待逆向；游戏内添加优先用 DEBUG 命令，不依赖改写 data 文件。
 
 ## 文件
 
